@@ -13,15 +13,14 @@ sns.set_theme(style="whitegrid")
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv("dashboard/main_data.csv")
+    try:
+        df = pd.read_csv("dashboard/main_data.csv")
+    except FileNotFoundError:
+        df = pd.read_csv("main_data.csv")
     df["order_purchase_timestamp"] = pd.to_datetime(df["order_purchase_timestamp"])
     return df
 
-try:
-    main_df = load_data()
-except FileNotFoundError:
-    main_df = pd.read_csv("main_data.csv")
-    main_df["order_purchase_timestamp"] = pd.to_datetime(main_df["order_purchase_timestamp"])
+main_df = load_data()
 
 # Sidebar Filter Rentang Waktu
 with st.sidebar:
@@ -66,45 +65,26 @@ with col3:
     st.metric("Total Pelanggan Unik", f"{unique_customers:,}")
 with col4:
     avg_delivery = filtered_df["delivery_days"].mean()
-    st.metric("Rata-rata Waktu Kirim", f"{avg_delivery:.1f} Hari")
+    st.metric("Rata-rata Waktu Kirim", f"{avg_delivery:.2f} Hari")
 
 st.divider()
 
-# Visualisasi 1: Tren Pesanan & Revenue Bulanan
-st.subheader("📈 Tren Pertumbuhan Pesanan Bulanan")
-monthly_df = filtered_df.groupby("order_month").agg(
-    total_orders=("order_id", "nunique"),
-    total_revenue=("price", "sum")
-).reset_index()
-
-fig_trend, ax_trend = plt.subplots(figsize=(14, 5))
-ax_trend.plot(
-    monthly_df["order_month"],
-    monthly_df["total_orders"],
-    marker="o",
-    linewidth=2.5,
-    color="#0055A5"
-)
-ax_trend.set_title("Jumlah Pesanan Unik per Bulan", fontsize=13, fontweight="bold")
-ax_trend.set_xlabel("Bulan", fontsize=11)
-ax_trend.set_ylabel("Total Pesanan", fontsize=11)
-ax_trend.tick_params(axis="x", rotation=45)
-st.pyplot(fig_trend)
-
-st.divider()
-
-# Visualisasi 2: Top 5 vs Bottom 5 Kategori Produk
-st.subheader("🏆 Kategori Produk dengan Pendapatan Tertinggi & Terendah")
+# Pertanyaan 1: Top 5 vs Bottom 5 Kategori Produk
+st.subheader("🏆 Pertanyaan 1: Kategori Produk dengan Pendapatan (Revenue) Tertinggi & Terendah")
 cat_df = (
     filtered_df[filtered_df["product_category_name_english"] != "unknown"]
     .groupby("product_category_name_english")
-    .agg(total_revenue=("price", "sum"))
+    .agg(
+        total_orders=("order_id", "nunique"),
+        total_items_sold=("order_id", "count"),
+        total_revenue=("price", "sum")
+    )
     .reset_index()
 )
 top5_cat = cat_df.sort_values(by="total_revenue", ascending=False).head(5)
 bottom5_cat = cat_df.sort_values(by="total_revenue", ascending=True).head(5)
 
-fig_cat, ax_cat = plt.subplots(nrows=1, ncols=2, figsize=(16, 6))
+fig_cat, ax_cat = plt.subplots(nrows=1, ncols=2, figsize=(18, 6))
 sns.barplot(
     x="total_revenue",
     y="product_category_name_english",
@@ -114,7 +94,7 @@ sns.barplot(
     legend=False,
     ax=ax_cat[0]
 )
-ax_cat[0].set_title("5 Kategori Revenue Tertinggi (BRL)", fontsize=13, fontweight="bold")
+ax_cat[0].set_title("5 Kategori Produk dengan Revenue Tertinggi (BRL)", fontsize=14, fontweight="bold")
 ax_cat[0].set_xlabel("Total Revenue (BRL)")
 ax_cat[0].set_ylabel(None)
 
@@ -130,75 +110,102 @@ sns.barplot(
 ax_cat[1].invert_xaxis()
 ax_cat[1].yaxis.set_label_position("right")
 ax_cat[1].yaxis.tick_right()
-ax_cat[1].set_title("5 Kategori Revenue Terendah (BRL)", fontsize=13, fontweight="bold")
+ax_cat[1].set_title("5 Kategori Produk dengan Revenue Terendah (BRL)", fontsize=14, fontweight="bold")
 ax_cat[1].set_xlabel("Total Revenue (BRL)")
 ax_cat[1].set_ylabel(None)
+plt.tight_layout()
 st.pyplot(fig_cat)
 
 st.divider()
 
-# Visualisasi 3: Demografi Negara Bagian & Analisis RFM
-col_left, col_right = st.columns(2)
+# Pertanyaan 2: Tren Bulanan & Demografi Negara Bagian
+st.subheader("📈 Pertanyaan 2: Tren Pertumbuhan Pesanan Bulanan & 10 Negara Bagian Tertinggi")
+monthly_df = filtered_df.groupby("order_month").agg(
+    total_orders=("order_id", "nunique"),
+    total_revenue=("price", "sum")
+).reset_index()
 
-with col_left:
-    st.subheader("🗺️ Top 10 Negara Bagian (State) Pelanggan")
-    state_df = (
-        filtered_df.groupby("customer_state")
-        .agg(total_orders=("order_id", "nunique"))
-        .sort_values(by="total_orders", ascending=False)
-        .head(10)
-        .reset_index()
-    )
-    fig_state, ax_state = plt.subplots(figsize=(8, 5))
-    sns.barplot(
-        x="total_orders",
-        y="customer_state",
-        hue="customer_state",
-        data=state_df,
-        palette=["#0055A5"] + ["#B0C4DE"] * (len(state_df) - 1),
-        legend=False,
-        ax=ax_state
-    )
-    ax_state.set_xlabel("Jumlah Pesanan Unik")
-    ax_state.set_ylabel("State")
-    st.pyplot(fig_state)
+state_df = (
+    filtered_df.groupby("customer_state")
+    .agg(total_orders=("order_id", "nunique"))
+    .sort_values(by="total_orders", ascending=False)
+    .head(10)
+    .reset_index()
+)
 
-with col_right:
-    st.subheader("👥 Segmentasi Pelanggan (RFM Manual Grouping)")
-    ref_date = filtered_df["order_purchase_timestamp"].max() + pd.Timedelta(days=1)
-    rfm = filtered_df.groupby("customer_unique_id", as_index=False).agg(
-        last_purchase=("order_purchase_timestamp", "max"),
-        frequency=("order_id", "nunique"),
-        monetary=("total_item_value", "sum")
-    )
-    rfm["recency"] = (ref_date - rfm["last_purchase"]).dt.days
+fig_q2, ax_q2 = plt.subplots(nrows=1, ncols=2, figsize=(18, 6))
+ax_q2[0].plot(
+    monthly_df["order_month"],
+    monthly_df["total_orders"],
+    marker="o",
+    linewidth=2.5,
+    color="#0055A5"
+)
+ax_q2[0].set_title("Tren Jumlah Pesanan Bulanan", fontsize=14, fontweight="bold")
+ax_q2[0].set_xlabel("Bulan Transaksi")
+ax_q2[0].set_ylabel("Jumlah Pesanan Unik")
+ax_q2[0].tick_params(axis="x", rotation=45)
 
-    def segment_func(row):
-        if row["monetary"] >= 300 and row["recency"] <= 180:
-            return "High-Value & Active"
-        elif row["monetary"] >= 300 and row["recency"] > 180:
-            return "High-Value At Risk"
-        elif row["monetary"] >= 100:
-            return "Medium-Value Customer"
-        else:
-            return "Low-Value / Entry Customer"
+sns.barplot(
+    x="total_orders",
+    y="customer_state",
+    hue="customer_state",
+    data=state_df,
+    palette=["#0055A5"] + ["#B0C4DE"] * (len(state_df) - 1),
+    legend=False,
+    ax=ax_q2[1]
+)
+ax_q2[1].set_title("10 Negara Bagian (State) dengan Pesanan Tertinggi", fontsize=14, fontweight="bold")
+ax_q2[1].set_xlabel("Jumlah Pesanan Unik")
+ax_q2[1].set_ylabel("Kode Negara Bagian (State)")
+plt.tight_layout()
+st.pyplot(fig_q2)
 
-    rfm["segment"] = rfm.apply(segment_func, axis=1)
-    seg_counts = rfm["segment"].value_counts().reset_index()
-    seg_counts.columns = ["segment", "count"]
+st.divider()
 
-    fig_rfm, ax_rfm = plt.subplots(figsize=(8, 5))
-    sns.barplot(
-        x="count",
-        y="segment",
-        hue="segment",
-        data=seg_counts,
-        palette=["#0055A5", "#4A90E2", "#90B4DE", "#C5D8F0"][:len(seg_counts)],
-        legend=False,
-        ax=ax_rfm
-    )
-    ax_rfm.set_xlabel("Jumlah Pelanggan Unik")
-    ax_rfm.set_ylabel(None)
-    st.pyplot(fig_rfm)
+# Analisis Lanjutan: RFM & Manual Grouping
+st.subheader("👥 Analisis Lanjutan: Segmentasi Pelanggan (RFM & Manual Grouping)")
+ref_date = filtered_df["order_purchase_timestamp"].max() + pd.Timedelta(days=1)
+rfm = filtered_df.groupby("customer_unique_id", as_index=False).agg(
+    last_purchase=("order_purchase_timestamp", "max"),
+    frequency=("order_id", "nunique"),
+    monetary=("total_item_value", "sum")
+)
+rfm["recency"] = (ref_date - rfm["last_purchase"]).dt.days
+
+def segment_func(row):
+    if row["monetary"] >= 300 and row["recency"] <= 180:
+        return "High-Value & Active"
+    elif row["monetary"] >= 300 and row["recency"] > 180:
+        return "High-Value At Risk"
+    elif row["monetary"] >= 100:
+        return "Medium-Value Customer"
+    else:
+        return "Low-Value / Entry Customer"
+
+rfm["customer_segment"] = rfm.apply(segment_func, axis=1)
+seg_counts = rfm["customer_segment"].value_counts().reset_index()
+seg_counts.columns = ["customer_segment", "customer_count"]
+
+fig_rfm, ax_rfm = plt.subplots(nrows=1, ncols=2, figsize=(18, 6))
+sns.barplot(
+    x="customer_count",
+    y="customer_segment",
+    hue="customer_segment",
+    data=seg_counts,
+    palette=["#0055A5", "#4A90E2", "#90B4DE", "#C5D8F0"][:len(seg_counts)],
+    legend=False,
+    ax=ax_rfm[0]
+)
+ax_rfm[0].set_title("Distribusi Segmen Pelanggan (Manual Grouping RFM)", fontsize=14, fontweight="bold")
+ax_rfm[0].set_xlabel("Jumlah Pelanggan Unik")
+ax_rfm[0].set_ylabel(None)
+
+sns.histplot(rfm["recency"], bins=30, color="#0055A5", kde=True, ax=ax_rfm[1])
+ax_rfm[1].set_title("Distribusi Recency Pelanggan (Hari Sejak Pembelian Terakhir)", fontsize=14, fontweight="bold")
+ax_rfm[1].set_xlabel("Recency (Hari)")
+ax_rfm[1].set_ylabel("Jumlah Pelanggan")
+plt.tight_layout()
+st.pyplot(fig_rfm)
 
 st.caption("Copyright © 2026 Zidny Ilman Nafi - Proyek Akhir Belajar Analisis Data dengan Python")
