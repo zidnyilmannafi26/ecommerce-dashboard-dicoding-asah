@@ -12,3 +12,5 @@ Proyek Akhir kelas **Belajar Analisis Data dengan Python** di Dicoding oleh **Zi
 1. **Clone atau ekstrak folder proyek ini, lalu masuk ke direktori proyek:**
    ```bash
    cd submission
+
+   url: https://ecommerce-dashboard-dicoding-asah-zidny.streamlit.app/
